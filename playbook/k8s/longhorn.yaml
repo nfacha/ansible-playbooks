@@ -1,0 +1,21 @@
+---
+- name: Deploy Longhorn to Kubernetes cluster
+  hosts: all
+  become: true
+  vars:
+    kubeconfig_path: /etc/kubernetes/admin.conf
+    longhorn_version: 1.4.0
+  tasks:
+  - name: Install required packages
+    apt:
+      name: ["curl"]
+      state: present
+
+  - name: Deploy Longhorn
+    shell: |
+      export KUBECONFIG={{ kubeconfig_path }}
+      curl -sL https://raw.githubusercontent.com/longhorn/longhorn/v{{longhorn_version}}/deploy/longhorn.yaml | kubectl apply -f -
+    args:
+      executable: /bin/bash
+    tags:
+    - longhorn

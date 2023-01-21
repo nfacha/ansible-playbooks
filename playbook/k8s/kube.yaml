@@ -1,0 +1,65 @@
+---
+- name: Install and configure Kubernetes on Ubuntu 22.04 LTS
+  hosts: all
+  become: true
+  vars:
+    kubernetes_version: 1.26.0
+    kubeadm_init_flags: "--pod-network-cidr=10.244.0.0/16"
+    master_node: "{{ hostvars[groups['k8s-master'][0]]['ansible_host'] }}"
+  tasks:
+  - name: Install required packages
+    apt:
+      name: ["apt-transport-https", "ca-certificates", "curl", "gnupg-agent", "software-properties-common"]
+      state: present
+
+  - name: Add Kubernetes apt repository
+    apt_repository:
+      repo: deb https://apt.kubernetes.io/ kubernetes-{{ kubernetes_version }} main
+      state: present
+      update_cache: yes
+    tags:
+    - kubernetes
+
+  - name: Add Kubernetes apt signing key
+    apt_key:
+      url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      state: present
+    tags:
+    - kubernetes
+
+  - name: Install Kubernetes
+    apt:
+      name: ["kubeadm", "kubelet", "kubectl"]
+      state: present
+      version: "{{ kubernetes_version }}-00"
+    tags:
+    - kubernetes
+
+  - name: Initialize Kubernetes cluster
+    command: kubeadm init {{ kubeadm_init_flags }}
+    register: kubeadm_init_output
+    when: ansible_host == master_node
+    tags:
+    - kubernetes
+
+  - name: Copy kubeconfig to current directory
+    copy:
+      src: /etc/kubernetes/admin.conf
+      dest: "{{ playbook_dir }}/admin.conf"
+      mode: 0644
+    when: ansible_host == master_node
+    tags:
+    - kubernetes
+
+  - name: Set kubeconfig path
+    set_fact:
+        kubeconfig_path: "{{ playbook_dir }}/admin.conf"
+    when: ansible_host == master_node
+    tags:
+    - kubernetes
+
+  - name: Join nodes to the cluster
+    command: kubeadm join {{ master_node }}:6443 --token {{ hostvars[master_node]['kubeadm_init_output'].stdout_lines[-1].split()[-1] }} --discovery-token-ca-cert-hash sha256:{{ hostvars[master_node]['kubeadm_init_output'].stdout_lines[-2].split()[-1] }}
+    when: ansible_host != master_node
+    tags:
+    - kubernetes

@@ -1,0 +1,69 @@
+---
+- name: Setup cadvisor and node_exporter to be connected to prometheus
+  hosts: all
+  become: yes
+  vars:
+    prom_user: "fake-user"
+    prom_password: "fake-password"
+    delete_container: false
+  tasks:
+  - name: Install required packages
+    apt:
+      name:
+        - "curl"
+      state: present
+
+  - name: Install Docker
+    apt:
+      name:
+        - "docker.io"
+      state: present
+
+  - name: Add Prometheus user
+    user:
+      name: "{{ prom_user }}"
+      password: "{{ prom_password | password_hash('sha512') }}"
+      state: present
+
+  - name: check if cadvisor container is running
+    shell: "docker ps --filter 'name=cadvisor' -q"
+    register: cadvisor_container_status
+
+  - name: Stop and/or delete existing cAdvisor container
+    command: "docker stop cadvisor ; docker rm -f cadvisor"
+    when: cadvisor_container_status.stdout != ""
+    register: cadvisor_container
+
+
+  - name: check if node_exporter service is running
+    shell: systemctl is-active node_exporter || echo inactive
+    register: node_exporter_status
+
+  - name: Stop and disable existing node_exporter service
+    service:
+      name: node_exporter
+      state: stopped
+      enabled: no
+    when: node_exporter_status.stdout == "active"
+
+
+
+  - name: check if node_exporter container is running
+    shell: "docker ps --filter 'name=node_exporter' -q"
+    register: node_exporter_container_status
+
+  - name: Stop and/or delete existing node_exporter container
+    command: "docker stop node_exporter ; docker rm -f node_exporter"
+    when: node_exporter_container_status.stdout != ""
+    register: node_exporter_container
+
+
+
+  - name: Start cAdvisor
+    command: "docker run --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --publish=8080:8080 --detach=true --name=cadvisor google/cadvisor:latest"
+
+  - name: Start node_exporter
+    command: "docker run --net=host --pid=host --detach=true --name=node_exporter prom/node-exporter"
+
+  - name: Configure basic auth for cAdvisor endpoint
+    command: "docker exec -it cadvisor htpasswd -cB /etc/nginx/.htpasswd {{ prom_user }} {{ prom_password }}"
