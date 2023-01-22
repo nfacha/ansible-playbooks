@@ -1,0 +1,12 @@
+[Unit]
+Description=Node Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User={{ prom_user }}
+ExecStart=/usr/local/bin/node_exporter --web.auth-file /etc/node_exporter/htpasswd
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

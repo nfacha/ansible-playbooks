@@ -1,5 +1,0 @@
-[k8s-master]
-kube-1
-
-[k8s-workers]
-kube-[2:3]

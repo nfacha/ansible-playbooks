@@ -2,3 +2,7 @@
 ansible-test.iml
 
 .idea/
+
+playbook/fmcs/monitoring/vars.json
+
+playbook/fmcs/hosts

@@ -1,0 +1,12 @@
+[Unit]
+Description=cAdvisor
+Wants=docker.service
+After=docker.service
+
+[Service]
+User={{ prom_user }}
+ExecStart=/usr/local/bin/cadvisor --http_auth_file=/etc/cadvisor/htpasswd --http_auth_realm fmcs -logtostderr
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

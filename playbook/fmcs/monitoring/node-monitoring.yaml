@@ -1,0 +1,103 @@
+---
+- name: Setup cadvisor and node_exporter to be connected to prometheus
+  hosts: all
+  user: root
+  become: yes
+  vars:
+    prom_user: "fake-user"
+    prom_password: "fake-password"
+    delete_container: false
+    node_exporter_version: "1.5.0"
+    cadvisor_version: "0.47.0"
+  tasks:
+    - name: Install curl
+      apt:
+        name: curl
+        state: present
+
+    - name: Install apache2-utils
+      apt:
+        name: apache2-utils
+        state: present
+
+    - name: Download and install node_exporter
+      shell: "curl -L https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz -o node_exporter.tar.gz && tar xvf node_exporter.tar.gz && mv node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/ && rm -rf node_exporter.tar.gz node_exporter-{{ node_exporter_version }}.linux-amd64"
+
+    - name: Download and install cadvisor
+      shell: "curl -L https://github.com/google/cadvisor/releases/download/v{{ cadvisor_version }}/cadvisor-v{{ cadvisor_version }}-linux-amd64 -o /usr/local/bin/cadvisor && chmod +x /usr/local/bin/cadvisor"
+
+    - name: Add Prometheus user
+      user:
+        name: "{{ prom_user }}"
+        password: "{{ prom_password | password_hash('sha512') }}"
+        state: present
+
+    - name: check if cadvisor service is running
+      shell: systemctl is-active cadvisor || echo inactive
+      register: cadvisor_status
+
+    - name: Stop and disable existing cadvisor service
+      service:
+        name: cadvisor
+        state: stopped
+        enabled: no
+      when: cadvisor_status.stdout == "active"
+
+    - name: check if node_exporter service is running
+      shell: systemctl is-active node_exporter || echo inactive
+      register: node_exporter_status
+
+    - name: Stop and disable existing node_exporter service
+      service:
+        name: node_exporter
+        state: stopped
+        enabled: no
+      when: node_exporter_status.stdout == "active"
+
+    - name: Create the /etc/cadvisor directory
+      file:
+        path: /etc/cadvisor
+        state: directory
+
+    - name: Create htpasswd file for cadvisor
+      shell: htpasswd -b -c /etc/cadvisor/htpasswd {{ prom_user }} {{ prom_password }}
+
+    - name: Create node_exporter password directory
+      file:
+        path: /etc/node_exporter
+        state: directory
+
+    - name: Create node_exporter password file
+      command: htpasswd -b -c /etc/node_exporter/htpasswd {{ prom_user }} {{ prom_password }}
+
+    - name: Create systemd service file for node_exporter
+      template:
+        src: files/node_exporter.service.j2
+        dest: /etc/systemd/system/node_exporter.service
+      notify:
+        - Reload systemd daemon
+
+    - name: Create systemd service file for cadvisor
+      template:
+        src: files/cadvisor.service.j2
+        dest: /etc/systemd/system/cadvisor.service
+      notify:
+        - Reload systemd daemon
+
+    - name: Enable and start the node_exporter service
+      service:
+        name: node_exporter
+        enabled: yes
+        state: started
+
+    - name: Enable and start the cadvisor service
+      service:
+        name: cadvisor
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: Reload systemd daemon
+      systemd:
+        name: daemon-reload
+        state: reloaded
